@@ -11,9 +11,6 @@ from discord_slash.utils.manage_commands import create_option
 
 
 
-guild_ids = [627899942593363968]
-
-
 
 async def SelectMember(member_id):
 
@@ -122,12 +119,7 @@ class RuGpt(commands.Cog):
         if dsa == None:
             memList = await ctx.guild.fetch_members(limit=100000).flatten()
 
-            if len(memList) < 50:
-                nums = 30
-            else:
-                nums = 100
-            
-            cursor.execute(f"INSERT INTO server VALUES ({ctx.guild.id},'0', '0', '{nums}')")
+            cursor.execute(f"INSERT INTO server VALUES ({ctx.guild.id},'0', '0', '50')")
             conn.commit()
 
         cursor.execute(f'UPDATE server SET Count = {int(dsa[2]) + 1} where Guild_id={int(ctx.guild.id)}')

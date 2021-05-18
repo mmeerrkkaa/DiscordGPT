@@ -44,15 +44,8 @@ async def on_guild_join(guild):
 	await channel.send(f"Бот присоединился к серверу - {guild.name}")
 	if await SelectJoinGuild(guild.id) == None:
 
-		memList = await guild.fetch_members(limit=100000).flatten()
-
-		if len(memList) < 50:
-			nums = 30
-		else:
-			nums = 100
-
 		cursor.execute(
-		    f"INSERT INTO server VALUES ({guild.id},'0', '0', '{nums}')")
+		    f"INSERT INTO server VALUES ({guild.id},'0', '0', '50')")
 		conn.commit()
 
 	memList = await guild.fetch_members(limit=100000).flatten()
@@ -83,13 +76,8 @@ async def on_ready():
 		if await SelectJoinGuild(guild.id) == None:
 			memList = await guild.fetch_members(limit=100000).flatten()
 
-			if len(memList) < 50:
-				nums = 30
-			else:
-				nums = 100
-
 			cursor.execute(
-			    f"INSERT INTO server VALUES ({guild.id},'0', '0', '{nums}')")
+			    f"INSERT INTO server VALUES ({guild.id},'0', '0', '50')")
 			conn.commit()
 
 			for member in memList:
