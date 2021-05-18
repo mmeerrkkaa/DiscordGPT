@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "repl_python3_DiscordGPT"
+version = "0.1.0"
+description = ""
+authors = ["Your Name <you@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+discord = "^1.0.1"
+discord-py-slash-command = "^1.1.2"
+aiosqlite = "^0.17.0"
+discord-ext-slash = "^0.6.2"
+flask = "^2.0.0"
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
