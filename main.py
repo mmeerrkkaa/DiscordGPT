@@ -6,6 +6,18 @@ from discord_slash.utils.manage_commands import create_option, create_choice
 import os
 import sqlite3
 import keep_alive
+from pymongo import MongoClient
+
+
+
+cluster = MongoClient(f"mongodb+srv://root:{os.environ.get('passdb')}@cluster0.ej8oe.mongodb.net/discord?retryWrites=true&w=majority")
+
+
+db = cluster['discord']
+collestionuser = db['user']
+collestionguild = db['guild']
+
+#collestion.insert_one({"id_member": "902313", "countGeneration": 0, "LastGenerationId": 0})
 
 print(discord.__version__)
 intents = discord.Intents.default()
@@ -14,79 +26,65 @@ intents.members = True
 bot = commands.Bot(command_prefix="*",
                    intents=discord.Intents.all(),
                    case_insensitive=True)
-
+bot.remove_command('help')
 slash = SlashCommand(bot, sync_commands=True, sync_on_cog_reload=True)
 
 
 async def SelectMember(member_id):
 
-	a = cursor.execute(
-	    f"SELECT * FROM users where id_member = {member_id}").fetchone()
-	return a
+    a = collestionuser.find_one({'id_member' : member_id})
+    return a
 
 
 async def SelectJoinGuild(Guild_id):
-	a = cursor.execute(
-	    f"SELECT Guild_id FROM server where Guild_id = {Guild_id}").fetchone()
-	return a
-
-
-async def SelectGuild(Guild_id):
-	a = cursor.execute(
-	    f"SELECT * FROM server where Guild_id = {Guild_id}").fetchone()
-	return a
+    a = collestionguild.find_one({'Guild_id' : Guild_id})
+    return a
 
 
 @bot.event
 async def on_guild_join(guild):
-	channel = bot.get_channel(843553799615807548)
+    channel = bot.get_channel(843553799615807548)
 
-	await channel.send(f"Бот присоединился к серверу - {guild.name}")
-	if await SelectJoinGuild(guild.id) == None:
+    await channel.send(f"Бот присоединился к серверу - {guild.name}")
+    if collestionguild.find_one({"Guild_id": guild.id}) is None:
+        collestionguild.insert_one({"Guild_id": guild.id, "count": 0})
 
-		cursor.execute(
-		    f"INSERT INTO server VALUES ({guild.id},'0', '0', '50')")
-		conn.commit()
+    memList = await guild.fetch_members(limit=100000).flatten()
+    for member in memList:
+        if collestionuser.find_one({"id_member": member.id}) is None:
+            collestionuser.insert_one({"id_member": member.id,"premium": 0, "countGeneration": 0, "LastGenerationId": 0})
 
-	memList = await guild.fetch_members(limit=100000).flatten()
-	for member in memList:
-
-		if await SelectMember(member.id) == None:
-			cursor.execute(
-			    f"INSERT INTO users VALUES ({member.id}, '0', 'None')"
-			)  #вводит все данные об участнике в БД
-
-	conn.commit()
 
 
 @bot.event
 async def on_member_join(member):
-	if await SelectMember(member.id) != None:
-		cursor.execute(f"INSERT INTO users VALUES ({member.id}, '0', 'None')")
-		conn.commit()
+    collestionuser.insert_one({"id_member": member.id,"premium": 0, "countGeneration": 0, "LastGenerationId": 0})
 
 
 @bot.event
 async def on_ready():
-	await bot.change_presence(activity=discord.Game(
+    await bot.change_presence(activity=discord.Game(
 	    name="Команды через слэш /"))
-	for guild in bot.guilds:
-		print(guild)
+    for guild in bot.guilds:
+        print(guild)
 
-		if await SelectJoinGuild(guild.id) == None:
-			memList = await guild.fetch_members(limit=100000).flatten()
 
-			cursor.execute(
-			    f"INSERT INTO server VALUES ({guild.id},'0', '0', '50')")
-			conn.commit()
+        if collestionguild.find_one({"Guild_id": guild.id}) is None:
+            collestionguild.insert_one({"Guild_id": guild.id, "count": 0})
 
-			for member in memList:
+        memList = await guild.fetch_members(limit=100000).flatten()
+        for member in memList:
+            if collestionuser.find_one({"id_member": member.id}) is None:
+                collestionuser.insert_one({"id_member": member.id,"premium": 0, "countGeneration": 0, "LastGenerationId": 0})
 
-				if await SelectMember(member.id) == None:
-					cursor.execute(
-					    f"INSERT INTO users VALUES ({member.id}, '0', 'None')"
-					)  #вводит все данные об участнике в БД
-					conn.commit()
+
+
+@bot.event
+async def on_raw_reaction_add(messages):
+    if messages.emoji.name == "❌":
+        msg = await bot.get_channel(messages.channel_id).fetch_message(messages.message_id)
+        await msg.delete()
+
 
 
 @bot.command()
@@ -108,37 +106,9 @@ for filename in os.listdir("./cogs"):
 
 
 @bot.command()
-async def dd(ctx, Guild_id=627899942593363968):
-	print(ctx.guild.id)
+async def dd(ctx):
+	print(collestionguild.find().count())
 
-
-@bot.command()
-async def UploadDB(ctx):
-	await ctx.send(file=discord.File(r'Discord.db'))
-
-
-conn = sqlite3.connect("Discord.db")  # или :memory:
-cursor = conn.cursor()
-
-cursor.execute(
-    f"CREATE TABLE IF NOT EXISTS users (id_member INTEGER, CountGeneration INTEGER, LastGenerationId INTEGER)"
-)
-conn.commit()
-
-cursor.execute(
-    f"CREATE TABLE IF NOT EXISTS history (ids INTEGER PRIMARY KEY NOT NULL, text TEXT,PeopleWords TEXT, member_id INTEGER, server_id INTEGER)"
-)
-conn.commit()
-
-cursor.execute(
-    f"CREATE TABLE IF NOT EXISTS server (Guild_id INTEGER,Premium INTEGER, Count INTEGER, MaxCount INTEGER)"
-)
-conn.commit()
-
-cursor.execute(
-    f"CREATE TABLE IF NOT EXISTS sponsor (id_member INTEGER, data TEXT)"
-)
-conn.commit()
 
 keep_alive.keep_alive()
 bot.run(os.environ.get("token"))

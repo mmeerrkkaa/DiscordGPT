@@ -4,27 +4,33 @@ import json
 import sqlite3
 import datetime
 import math
+import os
+from pymongo import MongoClient
+
+
+cluster = MongoClient(f"mongodb+srv://root:{os.environ.get('passdb')}@cluster0.ej8oe.mongodb.net/discord?retryWrites=true&w=majority")
+
+
+db = cluster['discord']
+collestionuser = db['user']
+collestionguild = db['guild']
+collestionhistory = db['history']
 
 
 async def SelectMember(member_id):
 
-    a = cursor.execute(f"SELECT * FROM users where id_member = {member_id}").fetchone()
+    a = collestionuser.find_one({'id_member' : member_id})
     return a
 
 
 async def SelectGuild(Guild_id):
-    a = cursor.execute(f"SELECT * FROM server where Guild_id = {Guild_id}").fetchone()
+    a = collestionguild.find_one({'Guild_id' : Guild_id})
     return a
+
 
 async def SelectHistory(ids):
-    a = cursor.execute(f"SELECT * FROM history where ids = {ids}").fetchone()
+    a = collestionhistory.find_one({'ids' : ids})
     return a
-
-async def SelectSponsor(member_id):
-
-    a = cursor.execute(f"SELECT * FROM sponsor where id_member = {member_id}").fetchone()
-    return a
-
 
 class sponsor(commands.Cog):
 
@@ -40,34 +46,31 @@ class sponsor(commands.Cog):
         if ctx.author.id!= 336119947736514560:
             return
         
-        if await SelectSponsor(id_member) != None:
+        if await SelectMember(id_member) == None:
+            await ctx.send("Нет такого в базе данных")
+
+        if await SelectMember(id_member)['premium'] != 0:
             await ctx.send("Он уже имеет премиум")
             return
 
-        dsa = await SelectMember(id_member)
 
-        if dsa == None:
-            await ctx.send("Нет такого в базе данных")
-        
-        times = datetime.datetime.today() + datetime.timedelta(hours=3)
+        collestionuser.update_one({"id_member": id_member}, {"$set": {"premium": 1}})
 
-        cursor.execute(f"INSERT INTO sponsor VALUES ({id_member}, '{times.day}.{times.month}.{times.year} - {times.hour}:{times.minute}')")#вводит все данные об участнике в БД
-
-        conn.commit()
         await ctx.send("Премиум статус выдан")
     
 
     @commands.command()
     async def history(self,ctx, ids):
 
-        if await SelectSponsor(ctx.author.id) == None:
+        if await SelectMember(ctx.author.id)['premium'] == 0:
             await ctx.send("Вы не имеете премиум статуса")
             return
 
         dsa = await SelectHistory(ids)
 
-        text = f"Автор: {dsa[1].split()}"
-        PeopleWords = json.loads(dsa[2])
+        text = f"Автор: {dsa['text'].split()}"
+        
+        PeopleWords = json.loads(dsa['PeopleWords'])
 
 
         for i in range(len(PeopleWords)):
@@ -86,22 +89,17 @@ class sponsor(commands.Cog):
     @commands.command()
     async def info(self,ctx):
 
-        if await SelectSponsor(ctx.author.id) == None:
+        if await SelectMember(ctx.author.id) == 0:
             await ctx.send("Вы не имеете премиум статуса")
             return
 
         dsa = await SelectMember(ctx.author.id)
 
-        await ctx.send(f"{ctx.author} у вас за всё время сгенерированно {dsa[1]} историй. Последняя под идом {dsa[2]}")
+        await ctx.send(f"{ctx.author} у вас за всё время сгенерированно {dsa['countGeneration']} историй. Последняя под идом {dsa['LastGenerationId']}")
     
     
         
         
-
-
-
-conn = sqlite3.connect("Discord.db") # или :memory:
-cursor = conn.cursor()
 
 
 def setup(bot):

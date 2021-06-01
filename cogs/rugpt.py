@@ -1,29 +1,42 @@
 import discord
 from discord.ext import commands
-import requests
+import aiohttp
+from aiohttp_requests import requests
 import json
 from io import StringIO
 import math
-import sqlite3
 from discord_slash import cog_ext
 from discord_slash.utils.manage_commands import create_option
+from fake_useragent import UserAgent
+import os
+from pymongo import MongoClient
 
+
+
+cluster = MongoClient(f"mongodb+srv://root:{os.environ.get('passdb')}@cluster0.ej8oe.mongodb.net/discord?retryWrites=true&w=majority")
+
+
+db = cluster['discord']
+collestionuser = db['user']
+collestionguild = db['guild']
+collestionhistory = db['history']
 
 
 
 
 async def SelectMember(member_id):
 
-    a = cursor.execute(f"SELECT * FROM users where id_member = {member_id}").fetchone()
+    a = collestionuser.find_one({'id_member' : member_id})
     return a
 
 
 async def SelectGuild(Guild_id):
-    a = cursor.execute(f"SELECT * FROM server where Guild_id = {Guild_id}").fetchone()
+    a = collestionguild.find_one({'Guild_id' : Guild_id})
     return a
 
+
 async def SelectHistory(ids):
-    a = cursor.execute(f"SELECT * FROM history where ids = {ids}").fetchone()
+    a = collestionhistory.find_one({'ids' : ids})
     return a
 
 
@@ -37,7 +50,7 @@ class RuGpt(commands.Cog):
 
         self.bot = bot
         self.url = 'https://api.aicloud.sbercloud.ru/public/v1/public_inference/gpt3/predict'
-
+        
         self.headers = {'Content-type': 'application/json',  # Определение типа данных
            'Accept': 'text/plain',
            'Content-Encoding': 'utf-8'}
@@ -65,15 +78,15 @@ class RuGpt(commands.Cog):
         channel = self.bot.get_channel(843553799615807548)
 
         data = {"text" :  " ".join(args)}
-        
-        
-
-
-        answer = requests.post(self.url, data=json.dumps(data), headers=self.headers)
-        response = answer.json()
+               
+        answer = await requests.post(self.url, data=json.dumps(data), headers=self.headers)
+        response = await answer.json()
+        print(answer)
         text = response["predictions"].split()
         textone = response["predictions"]
         
+        print(len(textone))
+
         PeopleWords = []
         for i in range(len(args)):
             PeopleWords.append(i)
@@ -99,34 +112,36 @@ class RuGpt(commands.Cog):
         
 
         PeopleWords = json.dumps(PeopleWords)
-        #textone = json.dumps(textone)
-        cursor.execute(f"INSERT INTO history VALUES (NULL, ?, ?, ?, ?)", (textone, PeopleWords, ctx.author.id, ctx.guild.id))
 
-        lastid = cursor.execute("SELECT * FROM history ORDER BY ids DESC LIMIT 1;").fetchone()
-        await channel.send(f"[{ctx.guild.name}] {ctx.author} генерирует текст - начало: {' '.join(args)}. Ид - {lastid[0]}")
+        
+
+
+
+        add = collestionhistory.find().count() + 1
+        collestionhistory.insert_one({"ids": add,"text": textone, "PeopleWords": PeopleWords, "id_member": ctx.author.id, "guild_id": ctx.guild.id})
+
+
+
+        await channel.send(f"[{ctx.guild.name}] {ctx.author} генерирует текст - начало: {' '.join(args)}. Ид - {add}")
+
 
         dsa = await SelectMember(ctx.author.id)
 
         if dsa == None:
-            cursor.execute(f"INSERT INTO users VALUES ({ctx.author.id}, '0', 'None')")#вводит все данные об участнике в БД
-            conn.commit()
+            collestionuser.insert_one({"id_member": ctx.author.id,"premium": 0, "countGeneration": 0, "LastGenerationId": 0})
         
-        cursor.execute(f'UPDATE users SET CountGeneration = (?), LastGenerationId = (?) where id_member={int(ctx.author.id)}', (int(dsa[1]) + 1, lastid[0]))
-        conn.commit()
+        dsa = await SelectMember(ctx.author.id)
+        
+        collestionuser.update_one({"id_member": ctx.author.id}, {"$set": {"countGeneration": dsa['countGeneration']+1, "LastGenerationId": add}})
+        
+
+        if await SelectGuild(ctx.guild.id) == None:
+
+            collestionguild.insert_one({"Guild_id": ctx.guild.id, "count": 0})
+
         dsa = await SelectGuild(ctx.guild.id)
-        conn.commit()
+        collestionguild.update_one({"Guild_id": ctx.guild.id}, {"$set": {"count": dsa['count']+1}})
 
-        if dsa == None:
-            memList = await ctx.guild.fetch_members(limit=100000).flatten()
-
-            cursor.execute(f"INSERT INTO server VALUES ({ctx.guild.id},'0', '0', '50')")
-            conn.commit()
-
-        cursor.execute(f'UPDATE server SET Count = {int(dsa[2]) + 1} where Guild_id={int(ctx.guild.id)}')
-
-
-        conn.commit()
-        # await ctx.send(file=discord.File(s, filename="text.txt"))
     
 
     @cog_ext.cog_slash(name="Продолжить",
@@ -145,7 +160,8 @@ class RuGpt(commands.Cog):
             args = args["текст"].split()
         
         authorDB = await SelectMember(ctx.author.id)
-        if authorDB[2] == "None":
+        print(authorDB)
+        if authorDB['LastGenerationId'] == "None":
             await ctx.send("У вас нету сгенерированных текстов!")
             return
 
@@ -155,16 +171,18 @@ class RuGpt(commands.Cog):
             sendschan = await ctx.send(f"Продолжение последнего текста... **{' '.join(args)}**...")
             
 
-        dsa = await SelectHistory(authorDB[2])
-
+        dsa = await SelectHistory(authorDB['LastGenerationId'])
+        
         PeopleWords = []
         if len(args) != 0:
+            print(dsa['PeopleWords'])
+            PeopleWords = [i for i in range(len(dsa['text'].split()), len(dsa['text'].split() + args))]
 
-            PeopleWords = [i for i in range(len(dsa[1].split()), len(dsa[1].split() + args))]
+            print(PeopleWords)
 
-            args = dsa[1].split() +  args
+            args = dsa['text'].split() +  args
         else:
-            args = dsa[1].split()
+            args = dsa['text'].split()
 
         
 
@@ -172,15 +190,15 @@ class RuGpt(commands.Cog):
 
         
         
-        answer = requests.post(self.url, data=json.dumps(data), headers=self.headers)
-        response = answer.json()
+        answer = await requests.post(self.url, data=json.dumps(data), headers=self.headers)
+        response = await answer.json()
 
         
         text = response["predictions"].split()
         textone = response["predictions"]
         
         
-        PeopleWords = json.loads(dsa[2]) + PeopleWords
+        PeopleWords = json.loads(dsa['PeopleWords']) + PeopleWords
 
 
         for i in range(len(PeopleWords)):
@@ -205,16 +223,15 @@ class RuGpt(commands.Cog):
 
         
         
-        PeopleWords = json.dumps(json.loads(dsa[2]) + PeopleWords)
+        PeopleWords = json.dumps(json.loads(dsa['PeopleWords']) + PeopleWords)
 
         #textone = json.dumps(textone)
-        cursor.execute(f'UPDATE history SET text = (?), PeopleWords = (?) where ids={authorDB[2]}', (textone, PeopleWords))
-
-        conn.commit()
 
 
-conn = sqlite3.connect("Discord.db") # или :memory:
-cursor = conn.cursor()
+        collestionhistory.update_one({"ids": authorDB['LastGenerationId']}, {"$set": {"text": textone, "PeopleWords": PeopleWords}})
+
+
+
 
 
 def setup(bot):
